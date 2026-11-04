@@ -1,0 +1,8 @@
+{
+  "files.encoding": "utf8",
+  "files.eol": "\n",
+  "editor.tabSize": 4,
+  "editor.insertSpaces": true,
+  "files.exclude": { "**/bin": true, "**/obj": true, ".local": true },
+  "search.exclude": { "**/bin": true, "**/obj": true, ".local": true, "models": true, "data": true }
+}

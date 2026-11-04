@@ -1,0 +1,31 @@
+name: Repository audit
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repository-audit:
+    name: Repository audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test audit rules
+        run: node --test scripts/repo-audit.test.mjs
+      - name: Check tracked files and incoming commits
+        run: node scripts/repo-audit.mjs
+        env:
+          AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          AUDIT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
