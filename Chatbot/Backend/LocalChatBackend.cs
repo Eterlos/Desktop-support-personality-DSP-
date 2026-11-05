@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace Dsp.Chatbot;
 
-/// <summary>Text client for a user-managed local OpenAI-compatible server.</summary>
+/// <summary>HTTP text client for a user-managed local Ollama server.</summary>
 public sealed class LocalChatBackend : IChatBackend, IDisposable
 {
     private readonly HttpClient client;
@@ -18,7 +18,7 @@ public sealed class LocalChatBackend : IChatBackend, IDisposable
             !uri.IsLoopback || !string.IsNullOrEmpty(uri.UserInfo) ||
             !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
         {
-            throw new ArgumentException("Укажите локальный HTTP(S)-адрес API, например http://localhost:1234/v1/.", nameof(baseUrl));
+            throw new ArgumentException("Укажите локальный адрес Ollama, например http://localhost:11434/v1/.", nameof(baseUrl));
         }
 
         if (apiKey is not null && apiKey.Any(char.IsControl))

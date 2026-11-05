@@ -2,15 +2,15 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace dcp_project;
 
 internal static class LocalOllama
 {
-    internal const string Model = "qwen3:4b-instruct";
     internal const string BaseUrl = "http://localhost:11434/v1/";
 
-    internal static async Task PrepareAsync(CancellationToken cancellationToken)
+    internal static async Task EnsureRunningAsync(CancellationToken cancellationToken)
     {
         using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
         {
@@ -38,12 +38,49 @@ internal static class LocalOllama
             if (!running) throw new InvalidOperationException("Ollama не запустилась. Запустите её вручную и повторите подключение.");
         }
 
-        // Empty prompt loads the installed model without adding a conversation turn.
-        using var response = await client.PostAsJsonAsync("api/generate",
-            new { model = Model, prompt = "", stream = false, keep_alive = "5m" }, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Не удалось загрузить {Model} (HTTP {(int)response.StatusCode}). Проверьте ollama list.");
     }
+
+    internal static bool IsLocalModel(JsonElement item)
+    {
+        if (item.ValueKind != JsonValueKind.Object ||
+            !item.TryGetProperty("name", out var name) || name.ValueKind != JsonValueKind.String ||
+            string.IsNullOrWhiteSpace(name.GetString()) ||
+            name.GetString()!.EndsWith(":cloud", StringComparison.OrdinalIgnoreCase) ||
+            name.GetString()!.EndsWith("-cloud", StringComparison.OrdinalIgnoreCase)) return false;
+        foreach (var field in new[] { "remote_host", "remote_model" })
+            if (item.TryGetProperty(field, out var remote) && remote.ValueKind != JsonValueKind.Null &&
+                (remote.ValueKind != JsonValueKind.String || !string.IsNullOrWhiteSpace(remote.GetString()))) return false;
+        return item.TryGetProperty("details", out var details) && details.ValueKind == JsonValueKind.Object &&
+            details.TryGetProperty("format", out var format) && format.GetString() == "gguf";
+    }
+
+    internal static async Task<IReadOnlyList<string>> GetModelsAsync(CancellationToken cancellationToken)
+    {
+        using var client = CreateClient();
+        using var response = await client.GetAsync("api/tags", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        if (!json.RootElement.TryGetProperty("models", out var models) || models.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException("Ollama вернула некорректный список моделей.");
+        return models.EnumerateArray().Where(IsLocalModel).Select(item => item.GetProperty("name").GetString()!)
+            .Distinct().OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    internal static async Task PrepareModelAsync(string model, CancellationToken cancellationToken)
+    {
+        if (!(await GetModelsAsync(cancellationToken)).Contains(model))
+            throw new InvalidOperationException("Выберите установленную локальную модель Ollama.");
+        using var client = CreateClient();
+        using var response = await client.PostAsJsonAsync("api/generate",
+            new { model, prompt = "", stream = false, keep_alive = "5m" }, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Не удалось загрузить {model} (HTTP {(int)response.StatusCode}).");
+    }
+
+    private static HttpClient CreateClient() => new(new HttpClientHandler { AllowAutoRedirect = false })
+    {
+        BaseAddress = new Uri("http://localhost:11434/"), Timeout = TimeSpan.FromMinutes(2)
+    };
 
     private static async Task<bool> IsRunningAsync(HttpClient client, CancellationToken cancellationToken)
     {

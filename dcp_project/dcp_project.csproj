@@ -13,4 +13,8 @@
     <ProjectReference Include="..\Chatbot\Backend\Chatbot.Backend.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Markdig" Version="1.6.0" />
+  </ItemGroup>
+
 </Project>

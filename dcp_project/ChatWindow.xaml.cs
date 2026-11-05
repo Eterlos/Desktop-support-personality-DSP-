@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Controls;
 using Dsp.Chatbot;
 
 namespace dcp_project;
@@ -9,7 +10,8 @@ public partial class ChatWindow : Window
 {
     private readonly LocalChatBackend _backend = new(LocalOllama.BaseUrl);
     private readonly CancellationTokenSource _lifetime = new();
-    private readonly List<ChatMessage> _history = [];
+    private readonly ChatSession _session;
+    private bool _updatingModels;
     private CancellationTokenSource? _request;
     private Task _initialization = Task.CompletedTask;
     private Task _sending = Task.CompletedTask;
@@ -19,6 +21,7 @@ public partial class ChatWindow : Window
 
     public ChatWindow()
     {
+        _session = new ChatSession(_backend, new MemoryChatHistoryStore(), Guid.NewGuid().ToString());
         InitializeComponent();
         Loaded += async (_, _) => await PrepareAsync();
     }
@@ -35,19 +38,68 @@ public partial class ChatWindow : Window
         _ready = false;
         _busy = true;
         UpdateButtons();
-        StatusText.Text = $"Загрузка {LocalOllama.Model}…";
+        StatusText.Text = "Получение локальных моделей Ollama…";
         try
         {
-            await LocalOllama.PrepareAsync(_lifetime.Token);
+            await LocalOllama.EnsureRunningAsync(_lifetime.Token);
+            var models = await LocalOllama.GetModelsAsync(_lifetime.Token);
             if (_shutdown) return;
-            _ready = true;
-            StatusText.Text = $"Готово · {LocalOllama.Model}";
+            _updatingModels = true;
+            try
+            {
+                ModelPicker.ItemsSource = models;
+                ModelPicker.SelectedItem = models.Contains(_session.Model) ? _session.Model : models.Count == 1 ? models[0] : null;
+            }
+            finally { _updatingModels = false; }
+            if (ModelPicker.SelectedItem is string selected)
+                await LoadModelAsync(selected);
+            else StatusText.Text = models.Count == 0
+                ? "Нет локальных моделей. Установите модель в Ollama и обновите список."
+                : "Выберите локальную модель. История диалога сохраняется при переключении.";
             if (IsVisible) MessageInput.Focus();
         }
         catch (OperationCanceledException) when (_shutdown) { }
         catch (Exception exception)
         {
             if (!_shutdown) StatusText.Text = $"Не удалось подключиться: {exception.Message}";
+        }
+        finally { _busy = false; if (!_shutdown) UpdateButtons(); }
+    }
+
+    private async Task LoadModelAsync(string model)
+    {
+        _ready = false;
+        StatusText.Text = $"Загрузка {model}…";
+        await LocalOllama.PrepareModelAsync(model, _lifetime.Token);
+        await _session.SelectModelAsync(model, _lifetime.Token);
+        if (_shutdown) return;
+        _ready = true;
+        StatusText.Text = $"Готово · {model}";
+    }
+
+    private async void Refresh_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy || _shutdown) return;
+        _initialization = InitializeAsync();
+        await _initialization;
+    }
+
+    private async void ModelPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingModels || _busy || _shutdown || ModelPicker.SelectedItem is not string model) return;
+        _initialization = SwitchModelAsync(model);
+        await _initialization;
+    }
+
+    private async Task SwitchModelAsync(string model)
+    {
+        _busy = true;
+        UpdateButtons();
+        try { await LoadModelAsync(model); }
+        catch (OperationCanceledException) when (_shutdown) { }
+        catch (Exception exception)
+        {
+            if (!_shutdown) StatusText.Text = $"Не удалось выбрать модель: {exception.Message}";
         }
         finally { _busy = false; if (!_shutdown) UpdateButtons(); }
     }
@@ -66,18 +118,14 @@ public partial class ChatWindow : Window
         _request = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         UpdateButtons();
         MessageInput.Clear();
-        Append($"Вы: {text}");
+        AppendMessage(Environment.MachineName, text, false);
         StatusText.Text = "Модель отвечает…";
         try
         {
-            var messages = new List<ChatMessage>(_history) { new("user", text) };
-            var reply = await _backend.ReplyAsync(LocalOllama.Model, messages, _request.Token);
+            var reply = await _session.ReplyAsync(text, _request.Token);
             if (_shutdown) return;
-            _history.Add(new("user", text));
-            _history.Add(new("assistant", reply));
-            if (_history.Count > 20) _history.RemoveRange(0, _history.Count - 20);
-            Append($"Бот: {reply}");
-            StatusText.Text = $"Готово · {LocalOllama.Model}";
+            AppendMessage("DSP", reply, true);
+            StatusText.Text = $"Готово · {_session.Model}";
         }
         catch (OperationCanceledException)
         {
@@ -98,7 +146,13 @@ public partial class ChatWindow : Window
 
     private void Append(string text)
     {
-        Transcript.AppendText(text + Environment.NewLine + Environment.NewLine);
+        MarkdownChatRenderer.Append(Transcript.Document, "", text, false);
+        Transcript.ScrollToEnd();
+    }
+
+    private void AppendMessage(string author, string text, bool markdown)
+    {
+        MarkdownChatRenderer.Append(Transcript.Document, author, text, markdown);
         Transcript.ScrollToEnd();
     }
 
@@ -107,6 +161,8 @@ public partial class ChatWindow : Window
         SendButton.IsEnabled = _ready && !_busy;
         MessageInput.IsEnabled = !_busy;
         ClearButton.IsEnabled = !_busy;
+        ModelPicker.IsEnabled = !_busy;
+        RefreshButton.IsEnabled = !_busy;
         CancelButton.IsEnabled = _request is not null;
     }
 
@@ -119,11 +175,21 @@ public partial class ChatWindow : Window
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => _request?.Cancel();
 
-    private void Clear_Click(object sender, RoutedEventArgs e)
+    private async void Clear_Click(object sender, RoutedEventArgs e)
     {
         if (_busy) return;
-        _history.Clear();
-        Transcript.Clear();
+        _busy = true;
+        UpdateButtons();
+        _sending = ClearHistoryAsync();
+        await _sending;
+    }
+
+    private async Task ClearHistoryAsync()
+    {
+        try { await _session.ClearAsync(_lifetime.Token); if (!_shutdown) Transcript.Document.Blocks.Clear(); }
+        catch (OperationCanceledException) when (_shutdown) { }
+        catch (Exception exception) { if (!_shutdown) StatusText.Text = exception.Message; }
+        finally { _busy = false; if (!_shutdown) UpdateButtons(); }
     }
 
     protected override void OnClosing(CancelEventArgs e)

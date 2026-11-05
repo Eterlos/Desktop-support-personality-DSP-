@@ -10,9 +10,17 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock x:Name="StatusText" Text="Подключение к Ollama…" TextWrapping="Wrap" Margin="0,0,0,8"/>
-        <TextBox x:Name="Transcript" Grid.Row="1" IsReadOnly="True" TextWrapping="Wrap"
-                 VerticalScrollBarVisibility="Auto" AutomationProperties.Name="История чата"/>
+        <StackPanel Margin="0,0,0,8">
+            <DockPanel Margin="0,0,0,8">
+                <Button x:Name="RefreshButton" DockPanel.Dock="Right" Content="Обновить модели" Padding="8,4" Margin="8,0,0,0" Click="Refresh_Click"/>
+                <ComboBox x:Name="ModelPicker" MinHeight="28" AutomationProperties.Name="Локальная модель Ollama" SelectionChanged="ModelPicker_SelectionChanged"/>
+            </DockPanel>
+            <TextBlock x:Name="StatusText" Text="Подключение к Ollama…" TextWrapping="Wrap"/>
+        </StackPanel>
+        <RichTextBox x:Name="Transcript" Grid.Row="1" IsReadOnly="True" IsDocumentEnabled="True"
+                     VerticalScrollBarVisibility="Auto" AutomationProperties.Name="История чата">
+            <FlowDocument FontFamily="Segoe UI" FontSize="14" PagePadding="8"/>
+        </RichTextBox>
         <TextBox x:Name="MessageInput" Grid.Row="2" MinHeight="32" Margin="0,8,0,8"
                  VerticalContentAlignment="Center" KeyDown="MessageInput_KeyDown"
                  AutomationProperties.Name="Сообщение"/>

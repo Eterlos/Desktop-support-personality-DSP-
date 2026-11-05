@@ -13,17 +13,17 @@ Console.CancelKeyPress += (_, eventArgs) =>
 try
 {
     Console.WriteLine("DSP: терминал локального чат-бота");
-    Console.WriteLine("Сначала запустите сервер модели в Ollama или LM Studio.");
+    Console.WriteLine("Сначала запустите Ollama с установленной локальной моделью.");
     var url = Environment.GetEnvironmentVariable("DSP_CHAT_BASE_URL");
     if (string.IsNullOrWhiteSpace(url))
     {
-        Console.Write("Адрес API [http://localhost:1234/v1/]: ");
+        Console.Write("Адрес Ollama [http://localhost:11434/v1/]: ");
         var input = Console.ReadLine();
         if (input is null) return;
-        url = string.IsNullOrWhiteSpace(input) ? "http://localhost:1234/v1/" : input.Trim();
+        url = string.IsNullOrWhiteSpace(input) ? "http://localhost:11434/v1/" : input.Trim();
     }
 
-    using var backend = new LocalChatBackend(url, Environment.GetEnvironmentVariable("DSP_CHAT_API_KEY"));
+    using var backend = new LocalChatBackend(url);
     await PrintModelsAsync();
     var model = Environment.GetEnvironmentVariable("DSP_CHAT_MODEL")?.Trim();
     if (string.IsNullOrWhiteSpace(model))
@@ -37,7 +37,7 @@ try
     Console.WriteLine("Команды: /models, /model <название>, /clear, /exit. Ctrl+C — выход.");
     while (!cancellation.IsCancellationRequested)
     {
-        Console.Write("Вы: ");
+        Console.Write($"{Environment.MachineName}: ");
         var input = Console.ReadLine();
         if (input is null || input.Trim() == "/exit") break;
         input = input.Trim();
@@ -49,8 +49,7 @@ try
             var selected = input[7..].Trim();
             if (selected.Length == 0) { Console.WriteLine("Укажите название модели."); continue; }
             model = selected;
-            history.Clear();
-            Console.WriteLine($"Выбрана модель: {model}. Диалог очищен.");
+            Console.WriteLine($"Выбрана модель: {model}. История диалога сохранена.");
             continue;
         }
 
@@ -60,8 +59,7 @@ try
             var reply = await backend.ReplyAsync(model, pending, cancellation.Token);
             history.Add(new ChatMessage("user", input));
             history.Add(new ChatMessage("assistant", reply));
-            if (history.Count > 20) history.RemoveRange(0, history.Count - 20);
-            Console.WriteLine($"Бот: {reply}");
+            Console.WriteLine($"DSP: {reply}");
         }
         catch (ChatBackendException exception) { Console.WriteLine($"Ошибка: {exception.Message}"); }
     }
