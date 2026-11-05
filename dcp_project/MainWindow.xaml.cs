@@ -10,6 +10,7 @@ namespace dcp_project;
 public partial class MainWindow : Window
 {
     private string _currentCharacter = "base_normal";
+    private ChatWindow? _chatWindow;
 
     public MainWindow()
     {
@@ -31,6 +32,21 @@ public partial class MainWindow : Window
 
         // Добавляем обработчик нажатия ПРАВОЙ кнопки мыши для крестового меню
         AssistantImage.MouseRightButtonDown += AssistantImage_MouseRightButtonDown;
+
+        _chatWindow = new ChatWindow { Owner = this };
+        _ = _chatWindow.PrepareAsync();
+        Closed += (_, _) => _chatWindow.Shutdown();
+    }
+
+    private void OpenChat_Click(object sender, RoutedEventArgs e)
+    {
+        if (AssistantImage.ContextMenu is { } menu) menu.IsOpen = false;
+        if (_chatWindow is null) return;
+        _ = _chatWindow.PrepareAsync();
+        _chatWindow.Show();
+        if (_chatWindow.WindowState == WindowState.Minimized)
+            _chatWindow.WindowState = WindowState.Normal;
+        _chatWindow.Activate();
     }
 
     private void SetCharacter(string characterName)

@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <Resource Include="assets\**\*.png" />
+    <ProjectReference Include="..\Chatbot\Backend\Chatbot.Backend.csproj" />
   </ItemGroup>
 
 </Project>

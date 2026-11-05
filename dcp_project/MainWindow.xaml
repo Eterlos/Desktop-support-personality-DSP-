@@ -88,7 +88,7 @@
                         <Button Grid.Row="1" Grid.Column="0" Content="▶ ПЛЕЕР" Width="80" Height="50" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="5,0"/>
 
                         <!-- ПРАВО -->
-                        <Button Grid.Row="1" Grid.Column="2" Content="ЧАТ" Width="80" Height="50" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="5,0"/>
+                        <Button Grid.Row="1" Grid.Column="2" Content="ЧАТ" Width="80" Height="50" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="5,0" Click="OpenChat_Click"/>
 
                         <!-- НИЗ -->
                         <StackPanel Grid.Row="2" Grid.Column="1" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,5">
@@ -103,6 +103,9 @@
 
     <Grid>
         <local:PixelPerfectImage x:Name="AssistantImage"
+                                 RenderOptions.BitmapScalingMode="NearestNeighbor"
+                                 SnapsToDevicePixels="True"
+                                 UseLayoutRounding="True"
                                  Stretch="Uniform"
                                  Width="300"
                                  Height="300"

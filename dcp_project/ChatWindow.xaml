@@ -1,0 +1,25 @@
+<Window x:Class="dcp_project.ChatWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Чат" Width="560" Height="520" MinWidth="380" MinHeight="320"
+        WindowStartupLocation="CenterScreen" Topmost="True">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="StatusText" Text="Подключение к Ollama…" TextWrapping="Wrap" Margin="0,0,0,8"/>
+        <TextBox x:Name="Transcript" Grid.Row="1" IsReadOnly="True" TextWrapping="Wrap"
+                 VerticalScrollBarVisibility="Auto" AutomationProperties.Name="История чата"/>
+        <TextBox x:Name="MessageInput" Grid.Row="2" MinHeight="32" Margin="0,8,0,8"
+                 VerticalContentAlignment="Center" KeyDown="MessageInput_KeyDown"
+                 AutomationProperties.Name="Сообщение"/>
+        <StackPanel Grid.Row="3" Orientation="Horizontal">
+            <Button x:Name="SendButton" Content="Отправить" Padding="12,5" IsEnabled="False" Click="Send_Click"/>
+            <Button x:Name="CancelButton" Content="Отменить" Margin="8,0,0,0" Padding="12,5" IsEnabled="False" Click="Cancel_Click"/>
+            <Button x:Name="ClearButton" Content="Очистить" Margin="8,0,0,0" Padding="12,5" Click="Clear_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>
