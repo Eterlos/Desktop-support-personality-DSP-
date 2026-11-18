@@ -13,7 +13,8 @@
         ShowInTaskbar="False"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterScreen"
-        WindowState="Maximized">
+        WindowState="Maximized"
+        AllowDrop="True">
 
     <Window.Resources>
         <!-- Универсальный стиль для темных скругленных кнопок -->
@@ -81,11 +82,62 @@
                         <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Bottom" HorizontalAlignment="Center">
                             <Button Content="..." Width="80" Height="25" Margin="0,2"/>
                             <Button Content="..." Width="80" Height="25" Margin="0,2"/>
-                            <Button Content="ФУНКЦИЯ 1" Width="80" Height="30" Margin="0,2"/>
+                            <Button Content="▣ БУФЕР" Width="80" Height="30" Margin="0,2" Click="OpenBuffer_Click"/>
                         </StackPanel>
 
                         <!-- ЛЕВО -->
-                        <Button Grid.Row="1" Grid.Column="0" Content="▶ ПЛЕЕР" Width="80" Height="50" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="5,0"/>
+                        <Button Grid.Row="1" Grid.Column="0" Content="▶ ПЛЕЕР" Width="80" Height="50" 
+                                HorizontalAlignment="Right" VerticalAlignment="Center" Margin="5,0"
+                                AllowDrop="True"
+                                DragEnter="PlayerButton_DragEnter" Drop="PlayerButton_Drop"
+                                MouseEnter="PlayerButton_MouseEnter" MouseLeave="PlayerButton_MouseLeave"/>
+
+                        <!-- Popup с управлением плеером (стиль основного меню) -->
+                        <Popup AllowsTransparency="True" PopupAnimation="Fade"
+                               StaysOpen="False" MouseLeave="PlayerPopup_MouseLeave">
+                            <Border Background="#2D2D30" BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="8"
+                                    SnapsToDevicePixels="True" Margin="5,0,0,0">
+                                <StackPanel Margin="10" MinWidth="210">
+                                    <TextBlock Text="ПЛЕЙЛИСТ" Foreground="#E0E0E0" FontFamily="Segoe UI Semibold" 
+                                               FontSize="11" Margin="0,0,0,6"/>
+                                    <ListBox x:Name="PlayerTrackList" Width="220" Height="140" 
+                                             Background="#2D2D30" BorderBrush="#3F3F46" BorderThickness="1"
+                                             Foreground="#E0E0E0" SelectionChanged="TrackList_SelectionChanged">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding DisplayName}" Foreground="#E0E0E0" Margin="2"/>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem">
+                                                <Setter Property="Background" Value="Transparent"/>
+                                                <Setter Property="BorderThickness" Value="0"/>
+                                                <Setter Property="Margin" Value="0,1"/>
+                                                <Setter Property="Padding" Value="4,2"/>
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter Property="Background" Value="#007ACC"/>
+                                                        <Setter Property="Foreground" Value="White"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="#3E3E42"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                    </ListBox>
+
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                                        <Button Content="⏮" Width="32" Height="32" Margin="3" Click="PrevTrack_Click" ToolTip="Предыдущий трек"/>
+                                        <Button Content="▶" Width="32" Height="32" Margin="3" Click="PlayPause_Click" ToolTip="Воспроизвести / Пауза"/>
+                                        <Button Content="⏭" Width="32" Height="32" Margin="3" Click="NextTrack_Click" ToolTip="Следующий трек"/>
+                                        <Button Content="1×" Width="32" Height="32" Margin="3" Click="SpeedToggle_Click" ToolTip="Скорость 2×"/>
+                                        <Button Content="⏪ 10с" Width="45" Height="32" Margin="3" Click="Rewind10_Click" ToolTip="Назад 10 секунд"/>
+                                        <Button Content="10с ⏩" Width="45" Height="32" Margin="3" Click="Forward10_Click" ToolTip="Вперёд 10 секунд"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
 
                         <!-- ПРАВО -->
                         <Button Grid.Row="1" Grid.Column="2" Content="ЧАТ" Width="80" Height="50" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="5,0" Click="OpenChat_Click"/>
@@ -101,20 +153,44 @@
         </ContextMenu>
     </Window.Resources>
 
-    <Grid>
-        <local:PixelPerfectImage x:Name="AssistantImage"
-                                 RenderOptions.BitmapScalingMode="NearestNeighbor"
-                                 SnapsToDevicePixels="True"
-                                 UseLayoutRounding="True"
-                                 Stretch="Uniform"
-                                 Width="300"
-                                 Height="300"
-                                 HorizontalAlignment="Left"
-                                 VerticalAlignment="Top"
-                                 Margin="10">
-            <local:PixelPerfectImage.RenderTransform>
+    <Grid AllowDrop="True">
+        <!-- Медиа-элемент для воспроизведения аудио (только звук, без видео) -->
+        <MediaElement x:Name="MediaElement" LoadedBehavior="Manual" UnloadedBehavior="Stop" Width="0" Height="0"/>
+
+        <!-- Внутренний контейнер: двигается целиком вместе с зонами -->
+        <Grid x:Name="CharacterContainer" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid.RenderTransform>
                 <TranslateTransform x:Name="ImageTransform"/>
-            </local:PixelPerfectImage.RenderTransform>
-        </local:PixelPerfectImage>
+            </Grid.RenderTransform>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Левая зона для плеера -->
+            <Border x:Name="DropZonePlayer" Grid.Column="0" Background="#007ACC" Opacity="0.35" 
+                    Visibility="Collapsed" AllowDrop="True" 
+                    DragOver="DropZone_DragOver" Drop="DropZonePlayer_Drop" 
+                    Width="120" Height="300" Margin="0,0,8,0" CornerRadius="8" SnapsToDevicePixels="True">
+                <TextBlock Text="ПЛЕЕР" Foreground="White" VerticalAlignment="Center" HorizontalAlignment="Center" FontWeight="Bold" FontSize="14"/>
+            </Border>
+
+            <!-- Персонаж -->
+            <local:PixelPerfectImage x:Name="AssistantImage" Grid.Column="1" AllowDrop="True" 
+                                    DragOver="DropZone_DragOver" Drop="AssistantImage_Drop" 
+                                    RenderOptions.BitmapScalingMode="NearestNeighbor" SnapsToDevicePixels="True" 
+                                    UseLayoutRounding="True" Stretch="Uniform" Width="300" Height="300" Margin="10"/>
+
+            <!-- Правая зона для буфера -->
+            <Border x:Name="DropZoneBuffer" Grid.Column="2" Background="#555555" Opacity="0.35" 
+                    Visibility="Collapsed" AllowDrop="True" 
+                    DragOver="DropZone_DragOver" Drop="DropZoneBuffer_Drop" 
+                    Width="120" Height="300" Margin="8,0,0,0" CornerRadius="8" SnapsToDevicePixels="True">
+                <TextBlock Width="112" Foreground="#E0E0E0" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" FontWeight="Bold" FontSize="10">
+                    <Run Text="БУФЕР"/><LineBreak/><Run Text="ТЕКСТ • ФОТО • ФАЙЛЫ"/>
+                </TextBlock>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

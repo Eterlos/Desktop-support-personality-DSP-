@@ -1,6 +1,10 @@
 ﻿using System;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -11,11 +15,41 @@ public partial class MainWindow : Window
 {
     private string _currentCharacter = "base_normal";
     private ChatWindow? _chatWindow;
+    private BufferWindow? _bufferWindow;
+    private const int MaxBufferedItems = 20;
+
+    public ObservableCollection<BufferItem> BufferedItems { get; } = new();
+
+    // --- Плеер ---
+    public class MusicTrack
+    {
+        public string FilePath { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+    }
+
+    public ObservableCollection<MusicTrack> Playlist { get; } = new();
+    private int _currentTrackIndex = -1;
+    private bool _isPlaying = false;
 
     public MainWindow()
     {
         InitializeComponent();
         Loaded += MainWindow_Loaded;
+
+        // Авто-переход к следующему треку по окончании текущего
+        MediaElement.MediaEnded += (_, _) =>
+        {
+            if (Playlist.Count == 0) return;
+            _currentTrackIndex = (_currentTrackIndex + 1) % Playlist.Count;
+            PlayTrack(_currentTrackIndex);
+        };
+
+        // Показ зон при перетаскивании файла над окном (не зависит от элемента под курсором)
+        this.DragEnter += MainWindow_DragEnter;
+        this.DragOver += MainWindow_DragOver;
+        this.DragLeave += MainWindow_DragLeave;
+        this.Drop += (_, _) => HideDropZones(); // Скрывать зоны, если бросили мимо
+
     }
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -24,8 +58,14 @@ public partial class MainWindow : Window
 
         // Подвязываем меню из ресурсов
         AssistantImage.ContextMenu = FindResource("AssistantMenu") as ContextMenu;
+        if (AssistantImage.ContextMenu is { } playerMenu)
+        {
+            // Шаблон контекстного меню создаёт ListBox отдельно от визуального дерева окна.
+            // Привязываем список при открытии меню, а не только при наведении на кнопку.
+            playerMenu.Opened += (_, _) => BindPlaylistToListBox(playerMenu);
+        }
 
-        // Регистрируем события мыши
+        // Регистрируем события мыши (перемещение окна)
         AssistantImage.MouseLeftButtonDown += AssistantImage_MouseLeftButtonDown;
         AssistantImage.MouseMove += AssistantImage_MouseMove;
         AssistantImage.MouseLeftButtonUp += AssistantImage_MouseLeftButtonUp;
@@ -35,7 +75,11 @@ public partial class MainWindow : Window
 
         _chatWindow = new ChatWindow { Owner = this };
         _ = _chatWindow.PrepareAsync();
-        Closed += (_, _) => _chatWindow.Shutdown();
+        Closed += (_, _) =>
+        {
+            _chatWindow.Shutdown();
+            _bufferWindow?.Close();
+        };
     }
 
     private void OpenChat_Click(object sender, RoutedEventArgs e)
@@ -47,6 +91,25 @@ public partial class MainWindow : Window
         if (_chatWindow.WindowState == WindowState.Minimized)
             _chatWindow.WindowState = WindowState.Normal;
         _chatWindow.Activate();
+    }
+
+    private void OpenBuffer_Click(object sender, RoutedEventArgs e)
+    {
+        if (AssistantImage.ContextMenu is { } menu) menu.IsOpen = false;
+        ShowBufferWindow();
+    }
+
+    private void ShowBufferWindow()
+    {
+        if (_bufferWindow is null)
+        {
+            _bufferWindow = new BufferWindow(BufferedItems) { Owner = this };
+            _bufferWindow.Closed += (_, _) => _bufferWindow = null;
+        }
+        _bufferWindow.Show();
+        if (_bufferWindow.WindowState == WindowState.Minimized)
+            _bufferWindow.WindowState = WindowState.Normal;
+        _bufferWindow.Activate();
     }
 
     private void SetCharacter(string characterName)
@@ -174,5 +237,447 @@ public partial class MainWindow : Window
             // Помечаем событие обработанным, чтобы стандартное меню Windows не пыталось перехватить клик
             e.Handled = true;
         }
+    }
+
+    // ================= ПЛЕЕР =================
+
+    /// <summary>Найти дочерний элемент типа T в дереве визуализации</summary>
+    private static T? FindVisualChild<T>(DependencyObject obj) where T : DependencyObject
+    {
+        if (obj == null) return null;
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(obj); i++)
+        {
+            var child = VisualTreeHelper.GetChild(obj, i);
+            if (child is T result) return result;
+            var found = FindVisualChild<T>(child);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    /// <summary>Получить Grid, содержащий кнопку плеера и popup (внутри шаблона ContextMenu)</summary>
+    private Grid? GetPlayerGrid(Button btn)
+    {
+        var parent = VisualTreeHelper.GetParent(btn);
+        return parent as Grid;
+    }
+
+    /// <summary>Получить ListBox плейлиста из Grid плеера</summary>
+    private ListBox? GetTrackList(Grid? grid)
+    {
+        if (grid == null) return null;
+        return FindVisualChild<ListBox>(grid);
+    }
+
+    private void BindPlaylistToListBox(ContextMenu? menu)
+    {
+        if (menu == null) return;
+        // Элементы внутри Popup находятся в отдельном визуальном дереве,
+        // поэтому FindVisualChild от окна/контекстного меню их не находит.
+        var listBox = menu.Template?.FindName("PlayerTrackList", menu) as ListBox;
+        if (listBox != null && listBox.ItemsSource != Playlist)
+            listBox.ItemsSource = Playlist;
+    }
+
+    /// <summary>Получить Popup управления из Grid плеера</summary>
+    private Popup? GetPlayerPopup(Grid? grid)
+    {
+        if (grid == null) return null;
+        return FindVisualChild<Popup>(grid);
+    }
+
+    /// <summary>Привязать плейлист к ListBox (вызывается при взаимодействии с кнопкой)</summary>
+    private void BindPlaylistToListBox(Button btn)
+    {
+        BindPlaylistToListBox(AssistantImage.ContextMenu);
+    }
+
+    /// <summary>Добавить трек в плейлист</summary>
+    private void AddTrack(string filePath)
+    {
+        if (Playlist.Any(t => string.Equals(t.FilePath, filePath, StringComparison.OrdinalIgnoreCase)))
+            return;
+        var name = Path.GetFileName(filePath);
+        Playlist.Add(new MusicTrack { FilePath = filePath, DisplayName = name });
+        BindPlaylistToListBox(AssistantImage.ContextMenu);
+
+        // Если это первый трек — выделяем его (но не начинаем играть автоматически)
+        if (_currentTrackIndex < 0)
+        {
+            _currentTrackIndex = 0;
+        }
+    }
+
+    /// <summary>Начать воспроизведение трека по индексу</summary>
+    private void PlayTrack(int index)
+    {
+        if (Playlist.Count == 0 || index < 0 || index >= Playlist.Count) return;
+
+        _currentTrackIndex = index;
+
+        // Выделяем трек в списке
+        var listBox = FindVisualChild<ListBox>(this);
+        if (listBox != null)
+            listBox.SelectedIndex = index;
+
+        try
+        {
+            MediaElement.Source = new Uri(Playlist[index].FilePath, UriKind.Absolute);
+            MediaElement.Play();
+            _isPlaying = true;
+        }
+        catch
+        {
+            // Игнорируем ошибки открытия файла
+        }
+    }
+
+    // --- Drag & Drop .mp3 на кнопку плеера ---
+
+    private void PlayerButton_DragEnter(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            if (files.Any(f => f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)))
+                e.Effects = DragDropEffects.Copy;
+            else
+                e.Effects = DragDropEffects.None;
+        }
+        else
+        {
+            e.Effects = DragDropEffects.None;
+        }
+        e.Handled = true;
+
+        // Привязываем плейлист к ListBox, когда пользователь наводит файл над кнопкой
+        if (sender is Button btn)
+            BindPlaylistToListBox(btn);
+    }
+
+    private void PlayerButton_Drop(object sender, DragEventArgs e)
+    {
+        if (sender is Button btn)
+            BindPlaylistToListBox(btn);
+
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            foreach (var file in files.Where(f => f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)))
+                AddTrack(file);
+        }
+        e.Handled = true;
+    }
+
+    // --- Открытие/закрытие popup при наведении ---
+
+    private void PlayerButton_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (sender is Button btn)
+        {
+            BindPlaylistToListBox(btn);
+
+            var grid = GetPlayerGrid(btn);
+            var popup = GetPlayerPopup(grid);
+            if (popup != null)
+            {
+                popup.PlacementTarget = btn;
+                popup.Placement = PlacementMode.Right;
+                popup.SetCurrentValue(Popup.IsOpenProperty, true);
+            }
+        }
+    }
+
+
+
+    private void PlayerButton_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (sender is Button btn)
+        {
+            var grid = GetPlayerGrid(btn);
+            var popup = GetPlayerPopup(grid);
+            if (popup != null && !popup.IsMouseOver)
+                popup.SetCurrentValue(Popup.IsOpenProperty, false);
+        }
+    }
+
+    private void PlayerPopup_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (sender is Popup popup)
+        {
+            var grid = VisualTreeHelper.GetParent(popup) as Grid;
+            if (grid != null)
+            {
+                var btn = FindVisualChild<Button>(grid);
+                if (btn != null && !btn.IsMouseOver)
+                    popup.SetCurrentValue(Popup.IsOpenProperty, false);
+            }
+        }
+    }
+
+    // --- Управление треками ---
+
+    private void TrackList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ListBox listBox && listBox.SelectedIndex >= 0)
+            PlayTrack(listBox.SelectedIndex);
+    }
+
+    private void PlayPause_Click(object sender, RoutedEventArgs e)
+    {
+        if (Playlist.Count == 0) return;
+
+        if (_currentTrackIndex < 0)
+        {
+            PlayTrack(0);
+            return;
+        }
+
+        if (_isPlaying)
+        {
+            MediaElement.Pause();
+            _isPlaying = false;
+            if (sender is Button btn) btn.Content = "▶";
+        }
+        else
+        {
+            MediaElement.Play();
+            _isPlaying = true;
+            if (sender is Button btn) btn.Content = "⏸";
+        }
+    }
+
+    private void NextTrack_Click(object sender, RoutedEventArgs e)
+    {
+        if (Playlist.Count == 0) return;
+        _currentTrackIndex = (_currentTrackIndex + 1) % Playlist.Count;
+        PlayTrack(_currentTrackIndex);
+    }
+
+    private void PrevTrack_Click(object sender, RoutedEventArgs e)
+    {
+        if (Playlist.Count == 0) return;
+        _currentTrackIndex = (_currentTrackIndex - 1 + Playlist.Count) % Playlist.Count;
+        PlayTrack(_currentTrackIndex);
+    }
+
+    private void SpeedToggle_Click(object sender, RoutedEventArgs e)
+    {
+        MediaElement.SpeedRatio = MediaElement.SpeedRatio == 2.0 ? 1.0 : 2.0;
+        if (sender is Button btn)
+            btn.Content = MediaElement.SpeedRatio == 2.0 ? "2×" : "1×";
+    }
+
+    private void Rewind10_Click(object sender, RoutedEventArgs e)
+    {
+        if (MediaElement.Source is null) return;
+        var target = TimeSpan.FromSeconds(Math.Max(0, MediaElement.Position.TotalSeconds - 10));
+        MediaElement.Position = target;
+    }
+
+    private void Forward10_Click(object sender, RoutedEventArgs e)
+    {
+        if (MediaElement.Source is null) return;
+        var target = TimeSpan.FromSeconds(MediaElement.Position.TotalSeconds + 10);
+        MediaElement.Position = target;
+    }
+
+    // ================= ДВУХЗОННЫЙ ДРОП (плеер + буфер) =================
+
+    private void ShowDropZones()
+    {
+        // Почти невидимый фон перехватывает мышь над пустым пространством во время Drag&Drop
+        this.Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
+        DropZonePlayer.Visibility = Visibility.Visible;
+        DropZoneBuffer.Visibility = Visibility.Visible;
+    }
+
+    private void HideDropZones()
+    {
+        // Возвращаем полную прозрачность для кликов сквозь окно
+        this.Background = null;
+        DropZonePlayer.Visibility = Visibility.Collapsed;
+        DropZoneBuffer.Visibility = Visibility.Collapsed;
+    }
+
+    private void MainWindow_DragEnter(object sender, DragEventArgs e)
+    {
+        if (!IsBufferData(e.Data) && !e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+        ShowDropZones();
+    }
+
+private void MainWindow_DragOver(object sender, DragEventArgs e)
+{
+    e.Effects = IsBufferData(e.Data) || e.Data.GetDataPresent(DataFormats.FileDrop)
+        ? DragDropEffects.Copy
+        : DragDropEffects.None;
+}
+
+
+    private void MainWindow_DragLeave(object sender, DragEventArgs e)
+    {
+        var pos = e.GetPosition(this);
+        if (pos.X <= 0 || pos.Y <= 0 || pos.X >= ActualWidth || pos.Y >= ActualHeight)
+        {
+            HideDropZones();
+        }
+    }
+
+    private void DropZone_DragOver(object sender, DragEventArgs e)
+    {
+        var isPlayerZone = ReferenceEquals(sender, DropZonePlayer);
+        var canDrop = isPlayerZone
+            ? e.Data.GetDataPresent(DataFormats.FileDrop) &&
+              e.Data.GetData(DataFormats.FileDrop) is string[] files &&
+              files.Any(file => file.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+            : IsBufferData(e.Data) || e.Data.GetDataPresent(DataFormats.FileDrop);
+        if (canDrop)
+        {
+            e.Effects = DragDropEffects.Copy;
+        }
+        else
+        {
+            e.Effects = DragDropEffects.None;
+        }
+        e.Handled = true;
+    }
+
+    /// <summary>Бросание файла в левую зону — добавить в плейлист плеера</summary>
+    private void DropZonePlayer_Drop(object sender, DragEventArgs e)
+    {
+        HideDropZones();
+
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            foreach (var file in files.Where(f => f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)))
+                AddTrack(file);
+        }
+        e.Handled = true;
+    }
+
+    private static bool IsBufferData(IDataObject data) =>
+        data.GetDataPresent(DataFormats.UnicodeText) ||
+        data.GetDataPresent(DataFormats.Text) ||
+        data.GetDataPresent(DataFormats.Bitmap);
+
+    /// <summary>Сохраняет текст, изображения и файлы в буфере</summary>
+    private void DropZoneBuffer_Drop(object sender, DragEventArgs e)
+    {
+        HideDropZones();
+        if (IsBufferData(e.Data) || e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            var added = AddDroppedDataToBuffer(e.Data);
+            if (added > 0)
+                ShowBufferWindow();
+        }
+        e.Handled = true;
+    }
+
+    private int AddDroppedDataToBuffer(IDataObject data)
+    {
+        var added = 0;
+        if (data.GetDataPresent(DataFormats.FileDrop) && data.GetData(DataFormats.FileDrop) is string[] files)
+        {
+            foreach (var file in files.Where(File.Exists))
+            {
+                AddBufferFile(file);
+                added++;
+            }
+        }
+
+        if (data.GetDataPresent(DataFormats.Bitmap) && data.GetData(DataFormats.Bitmap) is BitmapSource bitmap)
+        {
+            var imagePath = Path.Combine(Path.GetTempPath(), $"dcp-buffer-{Guid.NewGuid():N}.png");
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using (var stream = File.Create(imagePath)) encoder.Save(stream);
+            AddBufferFile(imagePath, "Изображение");
+            added++;
+        }
+
+        string? text = null;
+        if (data.GetDataPresent(DataFormats.UnicodeText))
+            text = data.GetData(DataFormats.UnicodeText) as string;
+        else if (data.GetDataPresent(DataFormats.Text))
+            text = data.GetData(DataFormats.Text) as string;
+
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            AddBufferText(text);
+            added++;
+        }
+
+        return added;
+    }
+
+    private void AddBufferFile(string filePath, string? titleOverride = null)
+    {
+        var isImage = IsImageFile(filePath);
+        BufferedItems.Add(new BufferItem
+        {
+            Kind = isImage ? "ФОТО" : "ФАЙЛ",
+            Title = titleOverride ?? Path.GetFileName(filePath),
+            PreviewText = isImage ? "Изображение можно перетащить в Telegram или другое приложение." : filePath,
+            FilePath = filePath,
+            PreviewImage = isImage ? LoadImagePreview(filePath) : null
+        });
+        TrimBuffer();
+    }
+
+    private void AddBufferText(string text)
+    {
+        var preview = text.Length > 360 ? text[..360] + "\n… (текст сокращён в превью)" : text;
+        BufferedItems.Add(new BufferItem
+        {
+            Kind = "ТЕКСТ",
+            Title = $"Текст · {text.Length:N0} символов",
+            PreviewText = preview,
+            Text = text
+        });
+        TrimBuffer();
+    }
+
+    private void TrimBuffer()
+    {
+        while (BufferedItems.Count > MaxBufferedItems)
+            BufferedItems.RemoveAt(0);
+    }
+
+    private static bool IsImageFile(string path) =>
+        new[] { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp" }
+            .Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+
+    private static ImageSource? LoadImagePreview(string path)
+    {
+        try
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.UriSource = new Uri(path, UriKind.Absolute);
+            image.DecodePixelWidth = 160;
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Бросание файла прямо на персонажа — добавить в плейлист плеера</summary>
+    private void AssistantImage_Drop(object sender, DragEventArgs e)
+    {
+        HideDropZones();
+
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+            foreach (var file in files.Where(f => f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)))
+                AddTrack(file);
+        }
+        e.Handled = true;
     }
 }
