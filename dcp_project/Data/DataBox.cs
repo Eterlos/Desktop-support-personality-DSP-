@@ -1,3 +1,5 @@
+using dcp_project.Data.Components;
+
 namespace dcp_project.Data;
 
 public sealed class DataBox
