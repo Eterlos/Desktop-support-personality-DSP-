@@ -145,7 +145,9 @@ public sealed class DatabaseService
 		command.CommandText = """
             SELECT Id, Title, OtherDescription, DeadLineAtUTC, RemindAtUTC, Priority, Status, CreatedAtUTC, UpdatedAtUTC
             FROM UserTask
-            ORDER BY Priority ASC, DeadLineAtUTC ASC;
+            ORDER BY Priority ASC, 
+                     CASE WHEN DeadLineAtUTC IS NULL THEN 1 ELSE 0 END, 
+                     DeadLineAtUTC ASC;
             """;
 
 		await using var reader = await command.ExecuteReaderAsync();
@@ -447,7 +449,7 @@ public sealed class DatabaseService
             SELECT last_insert_rowid();
             """;
 
-		AddParameter(command, "@fact", item.Fact);
+		AddParameter(command, "@fact", RequireText(item.Fact, nameof(item.Fact)));
 		AddParameter(command, "@category", item.Category);
 		AddParameter(command, "@source", item.Source.ToString());
 		AddParameter(command, "@active", item.IsActive ? 1 : 0);
@@ -475,7 +477,7 @@ public sealed class DatabaseService
             """;
 
 		AddParameter(command, "@id", item.Id);
-		AddParameter(command, "@fact", item.Fact);
+		AddParameter(command, "@fact", RequireText(item.Fact, nameof(item.Fact)));
 		AddParameter(command, "@category", item.Category);
 		AddParameter(command, "@source", item.Source.ToString());
 		AddParameter(command, "@active", item.IsActive ? 1 : 0);
@@ -596,7 +598,7 @@ public sealed class DatabaseService
 		};
 
 		if (!allowedTables.Contains(table))
-			throw new ArgumentException("Недопустимое имя таблицы.", nameof(table));
+			throw new ArgumentException("Недопустимое имя таблицы!", nameof(table));
 
 		await using var connection = await OpenConnectionAsync();
 		await using var command = connection.CreateCommand();
