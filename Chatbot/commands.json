@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "commands": [
+    {
+      "name": "dsp.docs.read",
+      "description": "Прочитать нужный раздел документации DSP, чтобы помочь пользователю с функциями, настройкой и использованием приложения.",
+      "enabled": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Точный путь документа из оглавления" },
+          "query": { "type": "string", "description": "Слово или точная фраза для поиска нужной функции, например плеер. Предпочтительнее выбора строк наугад." },
+          "startLine": { "type": "integer", "minimum": 1, "default": 1 },
+          "lineCount": { "type": "integer", "minimum": 1, "maximum": 200, "default": 120 }
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

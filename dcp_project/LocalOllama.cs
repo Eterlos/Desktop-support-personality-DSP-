@@ -40,19 +40,7 @@ internal static class LocalOllama
 
     }
 
-    internal static bool IsLocalModel(JsonElement item)
-    {
-        if (item.ValueKind != JsonValueKind.Object ||
-            !item.TryGetProperty("name", out var name) || name.ValueKind != JsonValueKind.String ||
-            string.IsNullOrWhiteSpace(name.GetString()) ||
-            name.GetString()!.EndsWith(":cloud", StringComparison.OrdinalIgnoreCase) ||
-            name.GetString()!.EndsWith("-cloud", StringComparison.OrdinalIgnoreCase)) return false;
-        foreach (var field in new[] { "remote_host", "remote_model" })
-            if (item.TryGetProperty(field, out var remote) && remote.ValueKind != JsonValueKind.Null &&
-                (remote.ValueKind != JsonValueKind.String || !string.IsNullOrWhiteSpace(remote.GetString()))) return false;
-        return item.TryGetProperty("details", out var details) && details.ValueKind == JsonValueKind.Object &&
-            details.TryGetProperty("format", out var format) && format.GetString() == "gguf";
-    }
+    internal static bool IsLocalModel(JsonElement item) => Dsp.Chatbot.OllamaModelCatalog.IsLocalModel(item);
 
     internal static async Task<IReadOnlyList<string>> GetModelsAsync(CancellationToken cancellationToken)
     {

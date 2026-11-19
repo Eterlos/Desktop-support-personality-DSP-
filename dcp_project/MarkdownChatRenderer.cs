@@ -119,6 +119,13 @@ internal static class MarkdownChatRenderer
 
     private static Span CreateLink(string? url)
     {
+        if (BehaviorFileLink.IsAllowed(url))
+        {
+            var behavior = new Hyperlink { NavigateUri = new Uri(Dsp.Chatbot.UserInstructions.LinkUrl),
+                ToolTip = "Открыть личные инструкции поведения в Блокноте" };
+            behavior.RequestNavigate += (_, args) => { args.Handled = true; BehaviorFileLink.Open(); };
+            return behavior;
+        }
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
             return new Span();
         var link = new Hyperlink { NavigateUri = uri, ToolTip = uri.AbsoluteUri };

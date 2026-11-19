@@ -4,4 +4,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="../commands.json" Link="commands.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="../TECHNICAL.md" LogicalName="DspDocs/Chatbot/TECHNICAL.md" />
+    <EmbeddedResource Include="../../README.md" LogicalName="DspDocs/README.md" />
+    <EmbeddedResource Include="../../dcp_project/Data/DATABASE_TECHNICAL.md" LogicalName="DspDocs/dcp_project/Data/DATABASE_TECHNICAL.md" />
+    <EmbeddedResource Include="../behavior.txt" LogicalName="DspDefaults/behavior.txt" />
+  </ItemGroup>
 </Project>

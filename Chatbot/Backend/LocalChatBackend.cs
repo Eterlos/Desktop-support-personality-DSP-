@@ -10,8 +10,9 @@ public sealed class LocalChatBackend : IChatBackend, IDisposable
     private readonly HttpClient client;
     private readonly Uri baseUri;
     private readonly string? apiKey;
+    private readonly bool jsonResponses;
 
-    public LocalChatBackend(string baseUrl, string? apiKey = null, HttpMessageHandler? handler = null)
+    public LocalChatBackend(string baseUrl, string? apiKey = null, HttpMessageHandler? handler = null, bool jsonResponses = false)
     {
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
@@ -30,6 +31,7 @@ public sealed class LocalChatBackend : IChatBackend, IDisposable
 
         baseUri = new Uri(uri.AbsoluteUri.TrimEnd('/') + "/");
         this.apiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey;
+        this.jsonResponses = jsonResponses;
         client = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false })
         {
             Timeout = TimeSpan.FromMinutes(2)
@@ -63,12 +65,14 @@ public sealed class LocalChatBackend : IChatBackend, IDisposable
             throw new ArgumentException("Нужен непустой список текстовых сообщений с ролями system, user или assistant.", nameof(messages));
 
         using var request = CreateRequest(HttpMethod.Post, "chat/completions");
-        request.Content = JsonContent.Create(new
+        var payload = new Dictionary<string, object>
         {
-            model,
-            messages = messages.Select(message => new { role = message.Role, content = message.Content }),
-            stream = false
-        });
+            ["model"] = model,
+            ["messages"] = messages.Select(message => new { role = message.Role, content = message.Content }),
+            ["stream"] = false
+        };
+        if (jsonResponses) payload["response_format"] = new { type = "json_object" };
+        request.Content = JsonContent.Create(payload);
         using var response = await SendAsync(request, cancellationToken);
         using var json = await ReadJsonAsync(response, cancellationToken);
         if (json.RootElement.TryGetProperty("choices", out var choices) &&
